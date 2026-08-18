@@ -2,6 +2,7 @@ import json
 import os
 
 from openai import OpenAI
+
 from src.tools import TOOLS, get_vacancies, notify_user
 
 MODEL = "deepseek-v4-flash-free"
@@ -22,7 +23,12 @@ def run_agent(user_request):
         {"role": "system", "content": SYSTEM_MESSAGE},
         {"role": "user", "content": user_request},
     ]
-    while True:
+
+    max_turns = 5
+    turns = 0
+
+    while turns < max_turns:
+        turns += 1
         response = client.chat.completions.create(
             model=MODEL,
             messages=messages,
@@ -30,13 +36,25 @@ def run_agent(user_request):
         )
         message = response.choices[0].message
         messages.append(message)
+
         if not message.tool_calls:
             print(message.content)
             break
+
         for call in message.tool_calls:
             name = call.function.name
-            args = json.loads(call.function.arguments)
-            output = FUNCTIONS[name](**args)
+
+            if name not in FUNCTIONS:
+                output = f"Ошибка: Инструмент '{name}' не существует."
+            else:
+                try:
+                    args = json.loads(call.function.arguments)
+                    output = FUNCTIONS[name](**args)
+                except json.JSONDecodeError:
+                    output = "Ошибка: Переданы некорректные JSON-аргументы."
+                except Exception as e:
+                    output = f"Ошибка выполнения инструмента: {str(e)}"
+
             messages.append(
                 {
                     "role": "tool",
@@ -44,3 +62,5 @@ def run_agent(user_request):
                     "content": json.dumps(output, ensure_ascii=False),
                 }
             )
+    else:
+        print("Агент остановлен: превышено максимальное количество шагов.")
